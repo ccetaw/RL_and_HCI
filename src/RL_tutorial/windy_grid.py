@@ -1,6 +1,5 @@
 import gym
 from gym import spaces
-import ray.rllib.agents.ppo
 import pygame
 import numpy as np
 from ray.rllib.agents import ppo
@@ -28,35 +27,43 @@ class WindyGrid(gym.Env):
             }
         )
         self._action_mapping = {
-            0: np.array([1, 0]),    # right
-            1: np.array([0, 1]),    # up 
-            2: np.array([-1,0]),    # left
-            3: np.array([0,-1])     # down
+            0: np.array([1, 0]),    # down
+            1: np.array([0, 1]),    # right
+            2: np.array([-1,0]),    # up
+            3: np.array([0,-1])     # left
         }
-        self._agent_location = np.array([3,0])
-        self._target_location = np.array([3,7])
+        self.agent_location = np.array([3,0])
+        self.target_location = np.array([3,7])
         self.wind = np.array([0,0,0,1,1,1,2,2,1,0])
+        self.counter = 0
+        self.done = False
         self.window = None
         self.clock = None
 
 
     def _get_obs(self):
-        return {"agent": self._agent_location, "target": self._target_location}
+        return {"agent": self.agent_location, "target": self.target_location}
     
     def step(self, action):
-        displacement = self._action_mapping[action] + np.array([self.wind[self._agent_location[1]], 0])
-        self._agent_location = np.clip(
-            self._agent_location + displacement, 0, self.size-1
+        displacement = self._action_mapping[action] + np.array([self.wind[self.agent_location[1]], 0])
+        self.agent_location = np.clip(
+            self.agent_location + displacement, 0, self.size-1
         )
-        done = np.array_equal(self._agent_location, self._target_location)
-        reward = 1 if done else 0
+        if np.array_equal(self.agent_location, self.target_location):
+            self.done = True
+            reward = -self.counter
+        elif self.counter >= 19:
+            self.done = True
+            reward = -2*self.counter
         observation = self._get_obs()
 
-        return observation, reward, done, {}
+        return observation, reward, self.done, {}
 
-    def reset(self, options=None):
-        self._agent_location = np.array([3,0])
-        self._target_location = np.array([3,7])
+    def reset(self):
+        self.agent_location = np.array([3,0])
+        self.target_location = np.array([3,7])
+        self.counter = 0
+        self.done = False
         observation = self._get_obs()
         return observation
     
@@ -79,7 +86,7 @@ class WindyGrid(gym.Env):
             canvas,
             (255, 0, 0),
             pygame.Rect(
-                pix_square_size * self._target_location,
+                pix_square_size * self.target_location[::-1],
                 (pix_square_size, pix_square_size),
             ),
         )
@@ -87,7 +94,7 @@ class WindyGrid(gym.Env):
         pygame.draw.circle(
             canvas,
             (0, 0, 255),
-            (self._agent_location + 0.5) * pix_square_size,
+            (self.agent_location[::-1] + 0.5) * pix_square_size,
             pix_square_size / 3,
         )
 
