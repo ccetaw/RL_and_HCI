@@ -10,6 +10,7 @@ parser = argparse.ArgumentParser()
 group = parser.add_mutually_exclusive_group()
 group.add_argument("--demo", action="store_true", help="Show a window of the system")
 group.add_argument("--train", action="store_true", help="Train the agent")
+group.add_argument("--show", action="store_true", help="Show the trained agent")
 args = parser.parse_args()
 
 class WindyGrid(gym.Env):
@@ -22,8 +23,8 @@ class WindyGrid(gym.Env):
         self.action_space = spaces.Discrete(4)
         self.observation_space = spaces.Dict(
             {
-                "agent": spaces.Box(low=0, high=self.size-1, shape=(2,), dtype=int),
-                "target": spaces.Box(low=0, high=self.size-1, shape=(2,), dtype=int)
+                "agent_location": spaces.Box(low=0, high=self.size-1, shape=(2,), dtype=int),
+                "target_location": spaces.Box(low=0, high=self.size-1, shape=(2,), dtype=int)
             }
         )
         self._action_mapping = {
@@ -32,8 +33,10 @@ class WindyGrid(gym.Env):
             2: np.array([-1,0]),    # up
             3: np.array([0,-1])     # left
         }
-        self.agent_location = np.array([3,0])
-        self.target_location = np.array([3,7])
+        self.state = {
+            "agent_location": np.random.randint(low=0, high=self.size, size=2),
+            "target_location": np.random.randint(low=0, high=self.size, size=2)
+        }
         self.wind = np.array([0,0,0,1,1,1,2,2,1,0])
         self.counter = 0
         self.done = False
@@ -41,30 +44,36 @@ class WindyGrid(gym.Env):
         self.clock = None
 
 
-    def _get_obs(self):
-        return {"agent": self.agent_location, "target": self.target_location}
+    def get_obs(self):
+        obs = {}
+        for key in self.observation_space:
+            obs[key] = self.state[key]
+        return obs
     
     def step(self, action):
-        displacement = self._action_mapping[action] + np.array([self.wind[self.agent_location[1]], 0])
-        self.agent_location = np.clip(
-            self.agent_location + displacement, 0, self.size-1
+        displacement = self._action_mapping[action] + np.array([self.wind[self.state["agent_location"][1]], 0])
+        self.state["agent_location"] = np.clip(
+            self.state["agent_location"] + displacement, 0, self.size-1
         )
-        if np.array_equal(self.agent_location, self.target_location):
+        reward = -1 # Every step is penalized
+        if np.array_equal(self.state["agent_location"], self.state["target_location"]):
             self.done = True
-            reward = -self.counter
-        elif self.counter >= 19:
+        elif self.counter >= 20:
             self.done = True
-            reward = -2*self.counter
-        observation = self._get_obs()
+            reward = -2*self.counter # If the episode takes too much time, it's terminated automatically and a big penalty is assigned
+        observation = self.get_obs()
+        self.counter += 1
 
         return observation, reward, self.done, {}
 
     def reset(self):
-        self.agent_location = np.array([3,0])
-        self.target_location = np.array([3,7])
+        self.state["agent_location"] = np.random.randint(low=0, high=self.size, size=2)
+        self.state["target_location"] = np.random.randint(low=0, high=self.size, size=2)
+        while np.array_equal(self.state["agent_location"], self.state["target_location"]):
+            self.state["target_location"] = np.random.randint(low=0, high=self.size, size=2)
         self.counter = 0
         self.done = False
-        observation = self._get_obs()
+        observation = self.get_obs()
         return observation
     
     def render(self, mode="human"):
@@ -86,7 +95,7 @@ class WindyGrid(gym.Env):
             canvas,
             (255, 0, 0),
             pygame.Rect(
-                pix_square_size * self.target_location[::-1],
+                pix_square_size * self.state["target_location"][::-1],
                 (pix_square_size, pix_square_size),
             ),
         )
@@ -94,7 +103,7 @@ class WindyGrid(gym.Env):
         pygame.draw.circle(
             canvas,
             (0, 0, 255),
-            (self.agent_location[::-1] + 0.5) * pix_square_size,
+            (self.state["agent_location"][::-1] + 0.5) * pix_square_size,
             pix_square_size / 3,
         )
 
@@ -150,12 +159,14 @@ if __name__ == "__main__":
         env.close()
 
     if args.train:
+        env_config = {
+            "window_size": 512,
+            "size": 10
+        }
+        env = WindyGrid(config=env_config)
         config = {
             "env": WindyGrid,  # or "corridor" if registered above
-            "env_config": {
-                "window_size": 512,
-                "size": 10
-            },
+            "env_config": env_config,
             # Use GPUs iff `RLLIB_NUM_GPUS` env var set to > 0.
             "num_gpus": 0,
             "num_workers": 1,  # parallelism
@@ -163,9 +174,9 @@ if __name__ == "__main__":
             "gamma": 0.9
         }
         stop = {
-            "training_iteration": 100,
-            "timesteps_total": 100000,
-            "episode_reward_mean": 0.1,
+            "training_iteration": 1000,
+            # "timesteps_total": 100000,
+            # "episode_reward_mean": -10,
         }
         ppo_config = ppo.DEFAULT_CONFIG.copy()
         ppo_config.update(config)
@@ -177,11 +188,42 @@ if __name__ == "__main__":
             result = trainer.train()
             print(pretty_print(result))
             # stop training of the target train steps or reward are reached
-            if (
-                result["timesteps_total"] >= stop["timesteps_total"]
-                or result["episode_reward_mean"] >= stop["episode_reward_mean"]
-            ):
-                break
+            # if (
+            #     result["timesteps_total"] >= stop["timesteps_total"]
+            # ):
+            #     break
+
+        trainer.save("./windy_grid_trained")
+        
+        for i in range(10):
+            env.reset()
+            while not env.done:
+                env.render()
+                action = trainer.compute_single_action(env.get_obs())
+                env.step(env.action_space.sample())
+        env.close()
+
+    if args.show:
+        env_config = {
+            "window_size": 512,
+            "size": 10
+        }
+        env = WindyGrid(config=env_config)
+        config = {
+            "env": WindyGrid,  # or "corridor" if registered above
+            "env_config": env_config,
+            # Use GPUs iff `RLLIB_NUM_GPUS` env var set to > 0.
+            "num_gpus": 0,
+            "num_workers": 1,  # parallelism
+            "framework": "torch",
+            "gamma": 0.9
+        }
+        config = {**ppo.DEFAULT_CONFIG, **config}
+        agent = ppo.PPOTrainer(config=config)
+        agent.restore("./windy_grid_trained")
+
+        
+
 
         
 
