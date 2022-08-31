@@ -7,7 +7,7 @@ from pygame import gfxdraw
 
 class Arena(MultiAgentEnv):
 
-    metadata = {"render.modes": ["human", "rgb_array"], "render_fps": 1}
+    metadata = {"render.modes": ["human", "rgb_array"], "render_fps": 3}
     reward_range = (-float("inf"), float("inf"))
     obstacles = [[1,0], [7,0], [1,1], [5,1], [7,1], 
                 [5,2], [7,2],
@@ -213,9 +213,10 @@ class Arena(MultiAgentEnv):
                 np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
             )
 
+
+def policy_mapping_fn(agent_id):
+    return f"{agent_id}"
         
-
-
 
 if __name__ == '__main__':
     import argparse
@@ -225,46 +226,44 @@ if __name__ == '__main__':
     group.add_argument("--dry_train", action="store_true", help="Train the agent")
     args = parser.parse_args()
 
-    uiconfig = {
+    env_config = {
         'random': False,
-        'n_buttons': 6,
-        'save_ui': False,
-        'mode': 'all_exclu'
     }
     if args.demo:
-        env = MultiAgentUI(uiconfig)
+        env = Arena(env_config)
 
         for _ in range(3):
             env.reset()
             for _ in range(10):
-                env.step({'user_high': env.action_space['user_high'].sample()})
-                env.step({'user_low': env.state['target']})
+                env.step({'chaser': env.action_space['chaser'].sample()})
+                env.render()
+                env.step({'user_low': env.action_space['chaser'].sample()})
                 env.render()
         env.close()
 
     if args.dry_train:
         from ray.rllib.agents import ppo
         from ray.tune.logger import pretty_print
-        env = MultiAgentUI(uiconfig)
+        env = Arena(env_config)
         policies = {
-            "user_high": (
+            "chaser": (
                 None,
-                env.observation_space['user_high'],
-                env.action_space['user_high'],
+                env.observation_space['chaser'],
+                env.action_space['chaser'],
                 {}
             ),
-            "user_low":(
+            "escaper":(
                 None,
-                env.observation_space['user_low'],
-                env.action_space['user_low'],
+                env.observation_space['escaper'],
+                env.action_space['escaper'],
                 {}
             )
         }
 
         config = {
             "num_workers": 3,
-            "env": MultiAgentUI,
-            "env_config": uiconfig,
+            "env": Arena,
+            "env_config": env_config,
             "gamma": 0.9,
             "multiagent": {
                 "policies": policies,
@@ -292,9 +291,10 @@ if __name__ == '__main__':
         for i in range(10):
             env.reset()
             while not env.done:
-                action = trainer.compute_single_action(observation=list(env.get_obs('user_high').values())[0], policy_id='user_high', unsquash_action=True)
-                env.step({'user_high': action})
-                env.step({'user_low': env.state['target']})
+                action = trainer.compute_single_action(observation=list(env.get_obs('chaser').values())[0], policy_id='chaser', unsquash_action=True)
+                env.step({'chaser': action})
+                env.render()
+                env.step({'escaper': env.state['target']})
                 env.render()
         env.close()
 
