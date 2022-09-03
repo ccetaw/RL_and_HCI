@@ -160,7 +160,7 @@ To train an RL agent on an environment, you could code as follows:
 ```python
 from ray.rllib.agents import ppo
 from ray.tune.logger import pretty_print
-from environment import YourEnv # put environment.py in the same folder as this file is
+from environment import YourEnv # put environment.py in the same folder as this file is in
 
 env_config = some_initialization_parameter # Define your initialization parameter here
 config = {
@@ -168,26 +168,29 @@ config = {
     “env_config”: env_config, # Parameters passed to YourEnv for initialization
     “num_gpus”: 0, # Use GPUs iff `RLLIB_NUM_GPUS` env var set to > 0.
     “num_workers”: 1,  # parallelism
-    “framework”: “torch”, 
-    “gamma”: 0.9
+    “framework”: “torch”, # or tf
+    “gamma”: 0.9 # discount rate
 }
 stop = { # When conditions below satisfied, stop training 
     “training_iteration”: 1000,
     “timesteps_total”: 100000,
     “episode_reward_mean”: -1,
 }
-ppo_config = ppo.DEFAULT_CONFIG.copy()
-ppo_config.update(config)
-# use fixed learning rate instead of grid search (needs tune)
-ppo_config[“lr”] = 1e-3
-trainer = ppo.PPOTrainer(config=ppo_config)
+
+config = {**ppo.DEFAULT_CONFIG, **config}
+trainer = ppo.PPOTrainer(config=config)
 # run manual training loop and print results after each iteration
 for _ in range(stop[“training_iteration”]):
     result = trainer.train()
     print(pretty_print(result))
+    if (
+            result["timesteps_total"] >= stop["timesteps_total"]
+            or result["episode_reward_mean"] >= stop["episode_reward_mean"]
+        ):
+            break
 ```
 
-When you do experiments, a better ways is to use `ray.tune` and let `ray` do the training automatically with parameters you provide. We show an example about how to train an agent on a windy grid.
+When you do experiments, a better way is to use `ray.tune` and let `ray` do the training automatically with parameters you provide. We show an example about how to train an agent on a windy grid.
 
 ```python
 import ray
@@ -197,8 +200,7 @@ from ray import tune
 
 ray.init(local_mode=False, num_cpus=8, num_gpus=0)
 env_config = {
-        ‘window_size’:tune.grid_search([512, 1024),
-        ‘size’:tune.grid_search([5, 7, 10]),
+        ‘size’:tune.grid_search([5, 7, 10]), # Setting parameters you want to tune
     }
     
 config = {
@@ -218,7 +220,7 @@ stop = {
 }
 
 config = {**ppo.DEFAULT_CONFIG, **config}
-results = tune.run(
+results = tune.run( 
         ppo.PPOTrainer,
         stop=stop,
         config=config,
@@ -233,6 +235,7 @@ ray.shutdown()
 ```
 
 ## How to build a multi-agent environment
+`ray` provides a good tutorial on building a mult-agent environment [Rise Camp Fall 2021 RLlib Tutorial](https://colab.research.google.com/drive/1pRxOjSszukN5X0B7EO_YvGPEIZ7P-zdP). In their tutorial, two agents act at the same time. We make a fancier example here where agents act in turn and obstcles appear in the arena. 
 
 
 

@@ -18,8 +18,8 @@ class WindyGrid(gym.Env):
     metadata = {"render_mode": ["human", "rgb_array"], "render_fps": 4}
     def __init__(self, config):
         super().__init__()
-        self.window_size = config["window_size"]
-        self.size = config["size"]
+        self.size = config["size"] # size should be at least 5 
+        self.window_size = 1024
         self.action_space = spaces.Discrete(4)
         self.observation_space = spaces.Dict(
             {
@@ -37,7 +37,9 @@ class WindyGrid(gym.Env):
             "agent_location": np.random.randint(low=0, high=self.size, size=2),
             "target_location": np.random.randint(low=0, high=self.size, size=2)
         }
-        self.wind = np.array([0,0,0,1,1,1,2,2,1,0])
+        self.wind = np.random.randint(low=-1, high=2, size=self.size)
+        self.wind[0] = 0
+        self.wind[-1] = 0  # This is to make sure that the problem is solvable
         self.counter = 0
         self.done = False
         self.window = None
@@ -51,7 +53,7 @@ class WindyGrid(gym.Env):
         return obs
     
     def step(self, action):
-        displacement = self._action_mapping[action] + np.array([self.wind[self.state["agent_location"][1]], 0])
+        displacement = self._action_mapping[action] + np.array([0, self.wind[self.state["agent_location"][1]]])
         self.state["agent_location"] = np.clip(
             self.state["agent_location"] + displacement, 0, self.size-1
         )
@@ -178,18 +180,16 @@ if __name__ == "__main__":
             # "timesteps_total": 100000,
             # "episode_reward_mean": -10,
         }
-        ppo_config = ppo.DEFAULT_CONFIG.copy()
-        ppo_config.update(config)
-        # use fixed learning rate instead of grid search (needs tune)
-        ppo_config["lr"] = 1e-3
-        trainer = ppo.PPOTrainer(config=ppo_config, env=WindyGrid)
+        config = {**ppo.DEFAULT_CONFIG, **config}
+        trainer = ppo.PPOTrainer(config=config)
         # run manual training loop and print results after each iteration
         for _ in range(stop["training_iteration"]):
             result = trainer.train()
             print(pretty_print(result))
             # stop training of the target train steps or reward are reached
             # if (
-            #     result["timesteps_total"] >= stop["timesteps_total"]
+            #     result["timesteps_total"] >= stop["timesteps_total"] or
+            #     result["episode_reward_mean"] >= -stop["episode_reward_mean"]
             # ):
             #     break
 
@@ -205,7 +205,6 @@ if __name__ == "__main__":
 
     if args.show:
         env_config = {
-            "window_size": 512,
             "size": 10
         }
         env = WindyGrid(config=env_config)

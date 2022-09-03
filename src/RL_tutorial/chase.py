@@ -1,7 +1,6 @@
 from gym import spaces
 import numpy as np
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
-from utils import policy_mapping_fn
 import pygame
 from pygame import gfxdraw
 
@@ -37,8 +36,8 @@ class Arena(MultiAgentEnv):
         }
         
         self.observation_space = {
-            'chaser': spaces.Dict(obs_user_high_dict),
-            'escaper': spaces.Dict(obs_user_low_dict)
+            'chaser': spaces.Dict(obs_chaser),
+            'escaper': spaces.Dict(obs_escaper)
         }
 
         self.state = {
@@ -53,7 +52,8 @@ class Arena(MultiAgentEnv):
             3: np.array([0,-1])     # up
         }
 
-        self.counter = 0
+        self.chaser_counter = 0
+        self.escaper_counter = 0
         self.done = False
         
 
@@ -82,7 +82,7 @@ class Arena(MultiAgentEnv):
     def check_legal_position(self, move_to):
         if (np.any(move_to < 0) or np.any(move_to >= self.size)):
             return False
-        elif move_to in obstacles:
+        elif list(move_to) in self.obstacles:
             return False
         else:
             return True 
@@ -91,52 +91,63 @@ class Arena(MultiAgentEnv):
         if self.random:
             chaser_position = np.random.randint(low=0, high=self.size, size=2)
             escaper_position = np.random.randint(low=0, high=self.size, size=2)
-            while not self.check_legal_position(chaser_position):
+            while not self.check_legal_position(chaser_position): # Chaser must be generated to a legal position
                 chaser_position = np.random.randint(low=0, high=self.size, size=2)
-            while ((not self.check_legal_position) or np.array_equal(chaser_position, escaper_position)):
+            while ((not self.check_legal_position) or np.array_equal(chaser_position, escaper_position)): # Escaper must be generated to a legal position and not the same position as chaser
                  escaper_position = np.random.randint(low=0, high=self.size, size=2)
         else:
             self.state['chaser_position'] = np.array([0,0])
             self.state['escaper_position'] = np.array([2,2])
-        self.counter = 0
+        self.chaser_counter = 0
+        self.escaper_counter = 0
         self.done = False
 
-        return self.get_obs('escaper')
+        return self.get_obs('chaser')
 
     def step(self, action_dict):
         agent_active = str(list(action_dict.keys())[0])
         action = list(action_dict.values())[0]
         reward = {}
-        if agent_active = 'chaser':
+        done = {}
+        if agent_active == 'chaser':
+            self.chaser_counter +=1
+            reward['chaser'] = 0
             move_to = self.state['chaser_position'] + self._action_mapping[action]
             if self.check_legal_position(move_to):
                 self.state['chaser_position'] = move_to
             else:
-                pass # Move to obstacles will be bounced back
+                reward['chaser'] -= 1 # Move to obstacles will be bounced back
                 
-            if np.array_equal(self.state['chase_position'], self.state['escaper_position']):
-                reward['chaser'] = 100
+            if np.array_equal(self.state['chaser_position'], self.state['escaper_position']): # Chaser wins
+                reward['chaser'] += 100
                 self.done = True
+            elif self.chaser_counter >= 20: # Chaser loses
+                reward['chaser'] -= 100
             else:
-                reward['chaser'] = -1
+                reward['chaser'] -= 5
+            done['__all__'] = self.done
+            return self.get_obs('escaper'), reward, done, {}
  
-        if agent_actve = 'escaper':
+        if agent_active == 'escaper':
+            self.escaper_counter += 1
+            reward['escaper'] = 0
             move_to = self.state['escaper_position'] + self._action_mapping[action]
             if self.check_legal_position(move_to):
                 self.state['escaper_position'] = move_to
             else:
-                pass # Move to obstacles will be bounced back
+                reward['escaper'] -= 1 # Move to obstacles will be bounced back
                 
-            if np.array_equal(self.state['chase_position'], self.state['escaper_position']):
-                reward['escaper'] = -100
+            if np.array_equal(self.state['chaser_position'], self.state['escaper_position']):
+                reward['escaper'] -= 100
+                self.done = True
+            elif self.escaper_counter >= 20:
+                reward['escaper'] += 100
                 self.done = True
             else:
-                reward['escaper'] = 0
-        
-        done = {'__all__': self.done} 
-                
-
-        return self.get_obs(agent_active), reward, done, {}
+                pass
+            
+            done['__all__'] = self.done
+            return self.get_obs('chaser'), reward, done, {}
 
 
     def render(self, mode='human'):
@@ -172,7 +183,7 @@ class Arena(MultiAgentEnv):
         )
         
         # Then we draw the obstacles
-        for obstacle in obstacles:
+        for obstacle in self.obstacles:
             pygame.draw.rect(
                 canvas,
                 (0, 0, 0),
@@ -234,10 +245,12 @@ if __name__ == '__main__':
 
         for _ in range(3):
             env.reset()
-            for _ in range(10):
+            while not env.done:
                 env.step({'chaser': env.action_space['chaser'].sample()})
                 env.render()
-                env.step({'user_low': env.action_space['chaser'].sample()})
+                if env.done:
+                    break
+                env.step({'escaper': env.action_space['escaper'].sample()})
                 env.render()
         env.close()
 
@@ -276,17 +289,18 @@ if __name__ == '__main__':
         }
 
         stop = {
-            "training_iteration": 150,
+            "training_iteration": 1000,
         }
 
         config = {**ppo.DEFAULT_CONFIG, **config}
         trainer = ppo.PPOTrainer(config=config)
 
-        for _ in range(stop["training_iteration"]):
+        for i in range(stop["training_iteration"]):
             result = trainer.train()
             print(pretty_print(result))
-
-        trainer.save("test4_1")
+            if (i+1)%100 == 0:
+                trainer.save('./chase_game_trained')
+        
 
         for i in range(10):
             env.reset()
@@ -294,7 +308,10 @@ if __name__ == '__main__':
                 action = trainer.compute_single_action(observation=list(env.get_obs('chaser').values())[0], policy_id='chaser', unsquash_action=True)
                 env.step({'chaser': action})
                 env.render()
-                env.step({'escaper': env.state['target']})
+                if env.done:
+                    break
+                action = trainer.compute_single_action(observation=list(env.get_obs('escaper').values())[0], policy_id='escaper', unsquash_action=True)
+                env.step({'escaper': action})
                 env.render()
         env.close()
 
