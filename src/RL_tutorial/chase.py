@@ -116,7 +116,7 @@ class Arena(MultiAgentEnv):
             if self.check_legal_position(move_to):
                 self.state['chaser_position'] = move_to
             else:
-                reward['chaser'] -= 1 # Move to obstacles will be bounced back
+                reward['chaser'] -= 5 # Move to obstacles will be bounced back
                 
             if np.array_equal(self.state['chaser_position'], self.state['escaper_position']): # Chaser wins
                 reward['chaser'] += 100

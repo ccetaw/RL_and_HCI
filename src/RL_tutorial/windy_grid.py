@@ -3,7 +3,8 @@ from gym import spaces
 import pygame
 import numpy as np
 from ray.rllib.agents import ppo
-from ray.tune.logger import pretty_print
+from ray import tune
+import ray
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -28,18 +29,19 @@ class WindyGrid(gym.Env):
             }
         )
         self._action_mapping = {
-            0: np.array([1, 0]),    # down
-            1: np.array([0, 1]),    # right
-            2: np.array([-1,0]),    # up
-            3: np.array([0,-1])     # left
+            0: np.array([1, 0]),    # right
+            1: np.array([0, 1]),    # down
+            2: np.array([-1,0]),    # left
+            3: np.array([0,-1])     # right
         }
         self.state = {
             "agent_location": np.random.randint(low=0, high=self.size, size=2),
             "target_location": np.random.randint(low=0, high=self.size, size=2)
-        }
-        self.wind = np.random.randint(low=-1, high=2, size=self.size)
+        } # Will be reset
+        self.wind = -np.ones(self.size, dtype=int)
         self.wind[0] = 0
         self.wind[-1] = 0  # This is to make sure that the problem is solvable
+        self.wind[int(self.size/2)] = -2
         self.counter = 0
         self.done = False
         self.window = None
@@ -53,7 +55,7 @@ class WindyGrid(gym.Env):
         return obs
     
     def step(self, action):
-        displacement = self._action_mapping[action] + np.array([0, self.wind[self.state["agent_location"][1]]])
+        displacement = self._action_mapping[action] + np.array([0, self.wind[self.state["agent_location"][0]]])
         self.state["agent_location"] = np.clip(
             self.state["agent_location"] + displacement, 0, self.size-1
         )
@@ -71,6 +73,8 @@ class WindyGrid(gym.Env):
     def reset(self):
         self.state["agent_location"] = np.random.randint(low=0, high=self.size, size=2)
         self.state["target_location"] = np.random.randint(low=0, high=self.size, size=2)
+        # This is to make sure that the target is always reachable
+        self.state["target_location"][1] = int(np.max([self.state["target_location"][1]/2 - 1, 0])) 
         while np.array_equal(self.state["agent_location"], self.state["target_location"]):
             self.state["target_location"] = np.random.randint(low=0, high=self.size, size=2)
         self.counter = 0
@@ -86,6 +90,7 @@ class WindyGrid(gym.Env):
         if self.clock is None and mode == "human":
             self.clock = pygame.time.Clock()
 
+        font = pygame.font.Font('freesansbold.ttf', 32)
         canvas = pygame.Surface((self.window_size, self.window_size))
         canvas.fill((255, 255, 255))
         pix_square_size = (
@@ -97,7 +102,7 @@ class WindyGrid(gym.Env):
             canvas,
             (255, 0, 0),
             pygame.Rect(
-                pix_square_size * self.state["target_location"][::-1],
+                pix_square_size * self.state["target_location"],
                 (pix_square_size, pix_square_size),
             ),
         )
@@ -105,9 +110,14 @@ class WindyGrid(gym.Env):
         pygame.draw.circle(
             canvas,
             (0, 0, 255),
-            (self.state["agent_location"][::-1] + 0.5) * pix_square_size,
+            (self.state["agent_location"] + 0.5) * pix_square_size,
             pix_square_size / 3,
         )
+
+        # Then we draw the wind
+        for i in range(self.size):
+            text = font.render(f'{-self.wind[i]}', True, (150, 0, 200))
+            canvas.blit(text, [pix_square_size * i + 5, 5])
 
         # Finally, add some gridlines
         for x in range(self.size + 1):
@@ -149,21 +159,29 @@ if __name__ == "__main__":
     
     if args.demo:
         env_config = {
-            "window_size": 512,
-            "size": 10
+            "size": 5
         }
         env = WindyGrid(config=env_config)
         for i in range(5):
             env.reset()
-            for j in range(10):
+            while not env.done:
                 env.render()
                 env.step(env.action_space.sample())
+                env.render()
         env.close()
 
     if args.train:
+        def trial_name_string(trial) -> str:
+            env_config = trial.config["env_config"]
+            keys = list(env_config.keys())
+            trial_name = f"{trial.trial_id}"
+            for key in keys:
+                trial_name += f"-{key}_{env_config[key]}"
+            return trial_name
+        
+        ray.init(local_mode=False, num_cpus=24, num_gpus=0)
         env_config = {
-            "window_size": 512,
-            "size": 10
+            "size": tune.grid_search([5, 7, 9])
         }
         env = WindyGrid(config=env_config)
         config = {
@@ -177,31 +195,19 @@ if __name__ == "__main__":
         }
         stop = {
             "training_iteration": 1000,
-            # "timesteps_total": 100000,
-            # "episode_reward_mean": -10,
         }
         config = {**ppo.DEFAULT_CONFIG, **config}
-        trainer = ppo.PPOTrainer(config=config)
-        # run manual training loop and print results after each iteration
-        for _ in range(stop["training_iteration"]):
-            result = trainer.train()
-            print(pretty_print(result))
-            # stop training of the target train steps or reward are reached
-            # if (
-            #     result["timesteps_total"] >= stop["timesteps_total"] or
-            #     result["episode_reward_mean"] >= -stop["episode_reward_mean"]
-            # ):
-            #     break
-
-        trainer.save("./windy_grid_trained")
-        
-        for i in range(10):
-            env.reset()
-            while not env.done:
-                env.render()
-                action = trainer.compute_single_action(env.get_obs())
-                env.step(env.action_space.sample())
-        env.close()
+        results = tune.run(
+            ppo.PPOTrainer,
+            trial_name_creator=trial_name_string,
+            stop=stop,
+            config=config,
+            local_dir="./windy_grid_trained",
+            verbose=1,
+            checkpoint_freq=100,
+            checkpoint_at_end=True,
+            num_samples=1,
+        )
 
     if args.show:
         env_config = {

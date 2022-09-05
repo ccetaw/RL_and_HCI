@@ -96,7 +96,8 @@ Normally you should see something like this
 
 ### Common Paradigm
 <!-- We all know that a reinforcement learning problem is mainly composed of **state**, **action**, **reward**, **policy**. An agent takes an action against the current state following a policy and then the state transits into another state.  -->
-You can find a tutorial [on the official webside of `gym`](https://www.gymlibrary.ml/content/environment_creation/). We will improve the example it provides by adding wind to the grid world. In a word, in this example an agent is trying to reach a randomly generated goal starting from a random position. 
+You can find a tutorial [on the official webside of `gym`](https://www.gymlibrary.ml/content/environment_creation/). We will improve the example it provides by adding wind to the grid world. In a word, in this example an agent is trying to reach a randomly generated goal starting from a random position. A 
+constant wind blows from bottom of the grid to the top. 
 
 In Python language, to customize your own environment, you should define a class inherited from `gym.Env`. There are four components that your must specify in your class: two properties `action_space` and `observation_space`, and two methods `step(action)` and `reset()`. Besides, it's a good practice to define the state of the environment a property of the class. 
 
