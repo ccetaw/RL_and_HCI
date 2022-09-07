@@ -1,7 +1,14 @@
 import numpy as np
 import random
 import json
-from utils import load_ui
+
+def load_ui(filename: str):
+    with open(filename, 'r') as file_to_read:
+        temp = json.load(file_to_read)
+    buttons = {}
+    for i in range(len(temp)):
+        buttons[i] = temp[f'{i}']
+    return buttons
 
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -187,7 +194,7 @@ class Interface():
         for key, button in self.buttons.items():
             lefttop = self.normalized_button_position(button)
             size = self.normalized_button_size(button)
-            if np.all(lefttop < position < lefttop + size):
+            if np.all(lefttop < position) and np.all(position < lefttop + size):
                 in_button.append(key)
         return in_button
 

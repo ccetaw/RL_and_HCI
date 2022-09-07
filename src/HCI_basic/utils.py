@@ -1,14 +1,5 @@
 import numpy as np
-import json
 from Interface import Interface
-
-def load_ui(filename: str):
-    with open(filename, 'r') as file_to_read:
-        temp = json.load(file_to_read)
-    buttons = {}
-    for i in range(len(temp)):
-        buttons[i] = temp[f'{i}']
-    return buttons
 
 def lorenz(x: float, sigma: float = 0.001) -> float:
     return np.log(1 + (x / sigma) ** 2 / 2)
@@ -94,15 +85,15 @@ def fast_intersection(L1, L2):
 
 def compute_width_distance_fast(position, interface: Interface, button_id):
     x = interface.normalized_button_position(interface.buttons[button_id])[0]
-    y = interface.normalized_button_position(interface.ui[button_id])[1]
-    h = interface.normalized_button_size(interface.ui[button_id])[1]
-    w = interface.button_normalized_size(interface.ui[button_id])[0]
+    y = interface.normalized_button_position(interface.buttons[button_id])[1]
+    h = interface.normalized_button_size(interface.buttons[button_id])[1]
+    w = interface.normalized_button_size(interface.buttons[button_id])[0]
     target_center = np.asarray(
-        [x + h / 2, y + w / 2])
+        [x + w / 2, y + h / 2])
     L1 = line(position, target_center)
     points = np.asarray(
-        [[x, x + h, x + h, x, x],
-         [y, y, y + w, y + w, y]])
+        [[x, x + w, x + w, x, x],
+         [y, y, y + h, y + h, y]])
 
     intersections = []
     for i in range(4):

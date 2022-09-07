@@ -183,7 +183,10 @@ if __name__ == "__main__":
         env_config = {
             "size": tune.grid_search([5, 7, 9])
         }
-        env = WindyGrid(config=env_config)
+        stop = {
+            "training_iteration": 1000,
+        }
+        # env = WindyGrid(config=env_config)
         config = {
             "env": WindyGrid,  # or "corridor" if registered above
             "env_config": env_config,
@@ -192,9 +195,6 @@ if __name__ == "__main__":
             "num_workers": 1,  # parallelism
             "framework": "torch",
             "gamma": 0.9
-        }
-        stop = {
-            "training_iteration": 1000,
         }
         config = {**ppo.DEFAULT_CONFIG, **config}
         results = tune.run(
