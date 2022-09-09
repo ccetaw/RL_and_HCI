@@ -124,7 +124,8 @@ class Arena(MultiAgentEnv):
             elif self.chaser_counter >= 20: # Chaser loses
                 reward['chaser'] -= 100
             else:
-                reward['chaser'] -= 5
+                # The farther the chaser is to the escaper, the more penalty it gets
+                reward['chaser'] -= np.sum(np.absolute(self.state['chaser_position'] - self.state['escaper_position']))
             done['__all__'] = self.done
             return self.get_obs('escaper'), reward, done, {}
  
@@ -289,7 +290,7 @@ if __name__ == '__main__':
         }
 
         stop = {
-            "training_iteration": 1000,
+            "training_iteration": 500,
         }
 
         config = {**ppo.DEFAULT_CONFIG, **config}

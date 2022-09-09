@@ -6,7 +6,8 @@ from utils import (
     compute_stochastic_position,
     minjerk_trajectory,
     compute_width_distance_fast,
-    jerk_of_minjerk_trajectory
+    jerk_of_minjerk_trajectory,
+    trial_name_string
     )
 
 class ButtonPanel(gym.Env, Interface):
@@ -22,6 +23,7 @@ class ButtonPanel(gym.Env, Interface):
         }
         self.observation_space = spaces.Dict(obs_dict)
         self.state = {
+            'previous_patttern': spaces.MultiBinary(self.n_buttons),
             'current_pattern': spaces.MultiBinary(self.n_buttons),
             'goal_pattern': spaces.MultiBinary(self.n_buttons),
             'cursor_position': spaces.Box(low=0., high=1., shape=(2,)),
@@ -42,11 +44,36 @@ class ButtonPanel(gym.Env, Interface):
             obs[key] = self.state[key]
         return obs
 
+    def get_reward(self):
+        reward = 0
+        reward -= 1 # Penalize every step
+        flag = True
+        done = False
+
+        if self.counter >= self.n_buttons * 2: # If episode lasts too long, terminate with big penalty
+            reward -= self.n_buttons * 2
+            done = True
+            return reward, done
+
+        # We don't care about status of central button(s)
+        for idx in self.button_group['normal']:
+            if self.buttons[idx].on != self.state['goal_pattern'][idx]:
+                flag = False
+        for idx in self.button_group['mutual_exclu']:
+            if self.buttons[idx].on != self.state['goal_pattern'][idx]:
+                flag = False
+        if flag:
+            reward += self.n_buttons * 2
+            done = True
+        return reward, done
+        
+
     def step(self, action, after_train=False):
         if after_train:
-            self.add['previous_pattern'] = self.state['current_pattern'].copy()
+            self.state['previous_pattern'] = self.state['current_pattern'].copy()
             self.state['target'] = self.normalized_button_position(self.buttons[action]) + 0.5 * self.normalized_button_size(self.buttons[action])
-            sigma, _ = compute_width_distance_fast(self.state['cursor_position'], self, action)
+            width, _ = compute_width_distance_fast(self.state['cursor_position'], self, action)
+            sigma = 1/4 * width
             self.add['move_from'] = self.state['cursor_position']
             self.add['move_to'], self.add['move_time'] = compute_stochastic_position(self.state['target'], self.state['cursor_position'], sigma)
             self.add['jerk'] = jerk_of_minjerk_trajectory(self.add['move_time'], self.add['move_from'], self.add['move_to'])
@@ -58,14 +85,8 @@ class ButtonPanel(gym.Env, Interface):
         else:
             self.press_button(action)
             self.state['current_pattern'] = self.button_pattern()
-        reward = -1
         self.counter += 1
-        if np.array_equal(self.state['current_pattern'], self.state['goal_pattern']):
-            self.done = True
-            reward += self.n_buttons * 2
-        elif self.counter >= self.n_buttons * 2:
-            self.done = True
-            reward -= self.n_buttons * 2
+        reward, self.done = self.get_reward()
         
         return self.get_obs(), reward, self.done, {}
 
@@ -161,7 +182,8 @@ class ButtonPanel(gym.Env, Interface):
                 )
 
 
-        # Draw the buttons
+        # Draw the previous button pattern
+        self.set_button_pattern(self.state['previous_pattern'])
         for button in self.buttons.values():
             if button.on:
                 pygame.draw.rect(
@@ -186,10 +208,24 @@ class ButtonPanel(gym.Env, Interface):
             canvas.blit(button_id, button.position + 5)
             canvas.blit(button_type, [button.position[0] + button.size[0] - 15, button.position[1] + 5])
 
+        # Draw the goal button pattern
+        self.set_button_pattern(self.state['goal_pattern'])
+        for button in self.buttons.values():
+            if button.on:
+                pygame.draw.rect(
+                    canvas,
+                    (255, 0, 0),
+                    pygame.Rect(
+                        button.position,
+                        (button.size[0], button.size[1]),
+                    ),
+                    width=3
+                )
+
         # Draw the cursor
         x = self.add['move_from'][0] * self.screen_width
         y = self.add['move_from'][1] * self.screen_height
-        cursor = pygame.draw.circle(canvas, color=(0,0,255), center=[x, y], radius=10)
+        pygame.draw.circle(canvas, color=(0,0,255), center=[x, y], radius=10)
 
         # Draw the target
         x = self.add['move_to'][0] * self.screen_width
@@ -217,6 +253,32 @@ class ButtonPanel(gym.Env, Interface):
             self.clock.tick(self.metadata["render_fps"])
             pygame.display.flip()
 
+        # Draw the current button pattern
+        self.set_button_pattern(self.state['current_pattern'])
+        for button in self.buttons.values():
+            if button.on:
+                pygame.draw.rect(
+                    canvas,
+                    (255, 165, 0),
+                    pygame.Rect(
+                        button.position,
+                        (button.size[0], button.size[1]),
+                    ),
+                )
+            else:
+                pygame.draw.rect(
+                    canvas,
+                    (200, 200, 200),
+                    pygame.Rect(
+                        button.position,
+                        (button.size[0], button.size[1]),
+                    ),
+                )
+            button_id = font.render(button.id, True, (150, 0, 200))
+            button_type = font.render(button.type[0], True, (0, 178, 238))
+            canvas.blit(button_id, button.position + 5)
+            canvas.blit(button_type, [button.position[0] + button.size[0] - 15, button.position[1] + 5])
+
     def close(self):
         import pygame
         pygame.display.quit()
@@ -230,12 +292,14 @@ if __name__ == '__main__':
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--demo", action="store_true", help="Show a window of the system")
     group.add_argument("--dry_train", action="store_true", help="Train the agent")
+    group.add_argument("--show", action="store_true", help="Show the trained agent")
     args = parser.parse_args()
 
     env_config = {
-        'n_buttons': 6,
-        'random': True
+        'n_buttons': 7,
+        'random': False
     }
+
     if args.demo:
         env = ButtonPanel(env_config)
 
@@ -250,20 +314,8 @@ if __name__ == '__main__':
         import ray
         from ray import tune
         from ray.rllib.agents.ppo import PPOTrainer, DEFAULT_CONFIG
-
-        def trial_name_string(trial) -> str:
-            env_config = trial.config["env_config"]
-            keys = list(env_config.keys())
-            trial_name = f"{trial.trial_id}"
-            for key in keys:
-                trial_name += f"-{key}_{env_config[key]}"
-            return trial_name
-
+        
         ray.init(local_mode=False, num_cpus=24, num_gpus=0)
-        env_config = {
-            'n_buttons': 7,
-            'random': False
-        }
         stop = {
             "training_iteration": 300,
         }
@@ -290,3 +342,28 @@ if __name__ == '__main__':
             num_samples=1
         )
         ray.shutdown()
+
+    if args.show:
+        from ray.rllib.agents.ppo import PPOTrainer, DEFAULT_CONFIG
+        env = ButtonPanel(env_config)
+        config = {
+            "num_workers": 3,
+            "env": ButtonPanel,
+            "env_config": env_config,
+            "gamma": 0.9,
+            "framework": "torch",
+            "log_level": "CRITICAL",
+            "num_gpus": 0,
+            "seed": 31415,
+        }
+        config = {**DEFAULT_CONFIG, **config}
+        agent = PPOTrainer(config=config)
+        agent.restore("./trained_user/PPOTrainer_2022-09-07_09-55-46/7b6bb_00000-n_buttons_7-random_False_0_2022-09-07_09-55-47/checkpoint_000300/checkpoint-300")
+        for _ in range(5):
+            env.reset(after_train=True)
+            while not env.done:
+                action = agent.compute_single_action(env.get_obs(), unsquash_action=True)
+                env.step(action, after_train=True)
+                env.render()
+        env.close()
+

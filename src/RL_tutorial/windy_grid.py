@@ -211,7 +211,7 @@ if __name__ == "__main__":
 
     if args.show:
         env_config = {
-            "size": 10
+            "size": 5
         }
         env = WindyGrid(config=env_config)
         config = {
@@ -225,7 +225,15 @@ if __name__ == "__main__":
         }
         config = {**ppo.DEFAULT_CONFIG, **config}
         agent = ppo.PPOTrainer(config=config)
-        agent.restore("./windy_grid_trained")
+        agent.restore("./windy_grid_trained/PPOTrainer_2022-09-07_09-42-43/a8315_00000-size_5_0_size=5_2022-09-07_09-42-43/checkpoint_001000/checkpoint-1000")
+
+        for i in range(10):
+            env.reset()
+            while not env.done:
+                action = agent.compute_single_action(observation=env.get_obs(), unsquash_action=True)
+                env.step(action)
+                env.render()
+        env.close()
 
         
 

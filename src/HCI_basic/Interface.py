@@ -179,6 +179,7 @@ class Interface():
             button = Button(button_arg)
             grid_button_position = self.grid_button_position(button.position)
             grid_button_size = self.grid_button_size(button.size)
+            flag = np.all(grid_button_size > 0)
             if self.is_available_grid_point(grid_button_position, grid_button_size): # Check if legal
                 pass
             else:
@@ -219,7 +220,7 @@ class Interface():
                     self.buttons[key].on = 1
             else:
                 for key in self.button_group['normal']:
-                    self.buttons[key].on = 1
+                    self.buttons[key].on = 0
         elif idx in self.button_group['normal']:
             pass
         elif idx in self.button_group['mutual_exclu']:
@@ -366,7 +367,7 @@ class Interface():
 
 if __name__ == '__main__':
     env_config = {
-        'n_buttons': 4,
+        'n_buttons': 9,
         'random': False
     }
 
@@ -374,6 +375,7 @@ if __name__ == '__main__':
     interface.show()
     interface.press_button(0)
     interface.show()
+    # interface.save('test.json')
     
 
 

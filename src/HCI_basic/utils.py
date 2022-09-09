@@ -1,6 +1,14 @@
 import numpy as np
 from Interface import Interface
 
+def trial_name_string(trial) -> str:
+            env_config = trial.config["env_config"]
+            keys = list(env_config.keys())
+            trial_name = f"{trial.trial_id}"
+            for key in keys:
+                trial_name += f"-{key}_{env_config[key]}"
+            return trial_name
+
 def lorenz(x: float, sigma: float = 0.001) -> float:
     return np.log(1 + (x / sigma) ** 2 / 2)
 
