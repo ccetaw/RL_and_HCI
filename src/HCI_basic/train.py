@@ -8,12 +8,12 @@ from utils import trial_name_string
 ray.init(local_mode=False, num_cpus=24, num_gpus=0)
 
 env_config = {
-    'random': True,
+    'random': False,
     'n_buttons': tune.grid_search([3,5,7,9]),
 }
 
 stop = {
-    "training_iteration": 300,
+    "training_iteration": 1000,
 }
 config = {
     "num_workers": 3,
@@ -37,12 +37,12 @@ results = tune.run(
     checkpoint_freq=50,
     checkpoint_at_end=True,
     num_samples=1,
-    callbacks=[
+    callbacks=[ # This callback is for the WandB support, comment it if you don't have an account
         WandbLoggerCallback(
-                project="button_panel",
-                entity="cetaceanw",
-                group="test",
-                job_type="train",
+                project="Project_Name",
+                entity="Your_User_Id",
+                group="Experiment_Name",
+                job_type="Train_Test_or_Anything",
                 log_config=True,
                 save_code=True,
         )

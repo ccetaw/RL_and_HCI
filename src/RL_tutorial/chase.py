@@ -2,7 +2,6 @@ from gym import spaces
 import numpy as np
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 import pygame
-from pygame import gfxdraw
 
 class Arena(MultiAgentEnv):
 
@@ -15,7 +14,7 @@ class Arena(MultiAgentEnv):
                 [1,6], [4,6], [7,6],
                 [1,7], [4,7], [7,7],
                 [1,8], [4,8], [5,8], [6,8], [7,8],
-                [1,9]]  # Cells that can't be occupied
+                [1,9]]  # Cells that can't be occupied, meaning walls
 
     def __init__(self, env_config):
         self.random = env_config['random']
@@ -88,6 +87,7 @@ class Arena(MultiAgentEnv):
             return True 
 
     def reset(self):
+        # Reset chaser and escaper to predefined positions or random positions
         if self.random:
             chaser_position = np.random.randint(low=0, high=self.size, size=2)
             escaper_position = np.random.randint(low=0, high=self.size, size=2)
@@ -105,6 +105,7 @@ class Arena(MultiAgentEnv):
         return self.get_obs('chaser')
 
     def step(self, action_dict):
+        # Chaser and escaper act in turn
         agent_active = str(list(action_dict.keys())[0])
         action = list(action_dict.values())[0]
         reward = {}
@@ -121,11 +122,9 @@ class Arena(MultiAgentEnv):
             if np.array_equal(self.state['chaser_position'], self.state['escaper_position']): # Chaser wins
                 reward['chaser'] += 100
                 self.done = True
-            elif self.chaser_counter >= 20: # Chaser loses
+            elif self.chaser_counter >= 30: # Chaser loses for not catching escaper for 30 rounds
                 reward['chaser'] -= 100
-            else:
-                # The farther the chaser is to the escaper, the more penalty it gets
-                reward['chaser'] -= np.sum(np.absolute(self.state['chaser_position'] - self.state['escaper_position']))
+            
             done['__all__'] = self.done
             return self.get_obs('escaper'), reward, done, {}
  
@@ -136,12 +135,12 @@ class Arena(MultiAgentEnv):
             if self.check_legal_position(move_to):
                 self.state['escaper_position'] = move_to
             else:
-                reward['escaper'] -= 1 # Move to obstacles will be bounced back
+                reward['escaper'] -= 5 # Move to obstacles will be bounced back
                 
             if np.array_equal(self.state['chaser_position'], self.state['escaper_position']):
-                reward['escaper'] -= 100
+                reward['escaper'] -= 100 # Escaper loses for being catched
                 self.done = True
-            elif self.escaper_counter >= 20:
+            elif self.escaper_counter >= 30: # Escaper wins
                 reward['escaper'] += 100
                 self.done = True
             else:
@@ -236,6 +235,7 @@ if __name__ == '__main__':
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--demo", action="store_true", help="Show a window of the system")
     group.add_argument("--dry_train", action="store_true", help="Train the agent")
+    group.add_argument("--show", action="store_true", help="Show the trained agent")
     args = parser.parse_args()
 
     env_config = {
@@ -290,7 +290,7 @@ if __name__ == '__main__':
         }
 
         stop = {
-            "training_iteration": 500,
+            "training_iteration": 300,
         }
 
         config = {**ppo.DEFAULT_CONFIG, **config}
@@ -312,6 +312,59 @@ if __name__ == '__main__':
                 if env.done:
                     break
                 action = trainer.compute_single_action(observation=list(env.get_obs('escaper').values())[0], policy_id='escaper', unsquash_action=True)
+                env.step({'escaper': action})
+                env.render()
+        env.close()
+
+    if args.show:
+        from ray.rllib.agents import ppo
+        env_config = {
+            "random": False
+        }
+        env = Arena(env_config)
+        policies = {
+            "chaser": (
+                None,
+                env.observation_space['chaser'],
+                env.action_space['chaser'],
+                {}
+            ),
+            "escaper":(
+                None,
+                env.observation_space['escaper'],
+                env.action_space['escaper'],
+                {}
+            )
+        }
+        config = {
+            "num_workers": 3,
+            "env": Arena,
+            "env_config": env_config,
+            "gamma": 0.9,
+            "multiagent": {
+                "policies": policies,
+                "policy_mapping_fn": policy_mapping_fn,
+            },
+            "framework": "torch",
+            "log_level": "CRITICAL",
+            "num_gpus": 0,
+            "seed": 31415,
+        }
+        config = {**ppo.DEFAULT_CONFIG, **config}
+        agent = ppo.PPOTrainer(config=config)
+        agent.restore("./some-check-point")
+
+        for i in range(5):
+            env.reset()
+            while not env.done:
+                # Chaser action
+                action = agent.compute_single_action(observation=list(env.get_obs('chaser').values())[0], policy_id='chaser', unsquash_action=True)
+                env.step({'chaser': action})
+                env.render()
+                if env.done:
+                    break
+                # Escaper action
+                action = agent.compute_single_action(observation=list(env.get_obs('escaper').values())[0], policy_id='escaper', unsquash_action=True)
                 env.step({'escaper': action})
                 env.render()
         env.close()

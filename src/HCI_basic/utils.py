@@ -118,15 +118,18 @@ def compute_width_distance_fast(position, interface: Interface, button_id):
             if on_segement:
                 intersections.append(R)
 
-    intersections = np.asarray(intersections)
-    width = calc_distance(
-        intersections[0, :],
-        intersections[1, :],
-        'l1',
-    )
-    distance = calc_distance(
-        position,
-        target_center,
-        'l1',
-    )
-    return width, distance
+    if len(intersections) == 0:
+        return w, 0
+    else:
+        intersections = np.asarray(intersections)
+        width = calc_distance(
+            intersections[0, :],
+            intersections[1, :],
+            'l1',
+        )
+        distance = calc_distance(
+            position,
+            target_center,
+            'l1',
+        )
+        return width, distance

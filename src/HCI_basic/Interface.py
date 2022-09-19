@@ -21,6 +21,9 @@ class NpEncoder(json.JSONEncoder):
         return super(NpEncoder, self).default(obj)
 
 class Button():
+    """
+    Button is essentially a data structure storing the position, size, id, on/off and type of the button.
+    """
     def __init__(self, args) -> None:
         self.position = np.array(args['position']) # Left-top cornor of the button
         self.size = np.array(args['size']) # [width, height]
@@ -49,6 +52,11 @@ class Button():
         return _status
 
 class Interface():
+    """
+    Interface is a window containing buttons. Buttons are anchored to predfined grid points to decrease the degree
+    of freedom. 
+    
+    """
     sample_id_pool = []
     for i in range(20):
         sample_id_pool.append(f'{hex(i)}') # Button name samples
@@ -56,17 +64,17 @@ class Interface():
     def __init__(self, config) -> None:
         self.screen_width = 960
         self.screen_height = 720
-        self.grid_size = 80
-        self.interval = 0 # unit: grid size
+        self.grid_size = 80 
+        self.interval = 0 # The minimum distance between buttons. Unit: grid size
         self.margin_size = 40 # area where buttons cannot occupy
         self.buttons = {}
         self.button_group = {}
 
-        self.n_buttons = config['n_buttons']
-        self.random = config['random']
+        self.n_buttons = config['n_buttons'] # number of buttons
+        self.random = config['random'] # whether buttons are randomly generated 
 
-        grid_width = int((self.screen_width-2*self.margin_size)/self.grid_size) + 1
-        grid_height = int((self.screen_height-2*self.margin_size)/self.grid_size) + 1
+        grid_width = int((self.screen_width-2*self.margin_size)/self.grid_size) + 1 # number of squares in width
+        grid_height = int((self.screen_height-2*self.margin_size)/self.grid_size) + 1 # number of squares in height
         self.grid = np.ones(shape=(grid_width, grid_height))
 
         if self.random:
@@ -111,7 +119,7 @@ class Interface():
             elif value.type == 'mutual_exclu':
                 self.button_group['mutual_exclu'].append(key)
 
-    def generate_sample_ui(self): # Buttons have the same shape and are aligned 
+    def generate_sample_ui(self): # Buttons have the same shape and are aligned, from top to bottom, left to right
         self.buttons.clear()
         self.grid = np.ones_like(self.grid)
         button_size = np.array([160, 160])
@@ -124,7 +132,7 @@ class Interface():
                 'size': button_size,
                 'id': self.sample_id_pool[i],
                 'on': 0,
-                'type': 'central' if i==0 else ('mutual_exclu' if i > self.n_buttons/2+1 else 'normal')
+                'type': 'central' if i==0 else ('mutual_exclu' if i > self.n_buttons/2+1 else 'normal') # A predefined way to generate type of buttons
             }
             button = Button(button_args)
             for j in range(len(not_occupied[0])):
@@ -190,7 +198,7 @@ class Interface():
         self.classify_buttons()
         return flag
     
-    def check_within_button(self, position):
+    def check_within_button(self, position): # Check if a point is in a button, in normalized metric
         in_button = []
         for key, button in self.buttons.items():
             lefttop = self.normalized_button_position(button)
@@ -201,11 +209,8 @@ class Interface():
 
     def button_pattern(self):
         pattern = []
-        for i in range(self.n_buttons):
-            if self.buttons[i].on == 1:
-                pattern.append(1)
-            else:
-                pattern.append(0)
+        for button in self.buttons.values():
+            pattern.append(button.on)
         return pattern
 
     def set_button_pattern(self, pattern: np.array):
@@ -233,7 +238,7 @@ class Interface():
     
     def check_legal_pattern(self, pattern: np.array):
         to_check = pattern[self.button_group['mutual_exclu']]
-        if np.sum(np.nonzero(to_check)[0]) > 1:
+        if np.sum(to_check) > 1:
             return False
         else:
             return True
@@ -258,7 +263,6 @@ class Interface():
 
     def show(self, show_grid=True):
         import pygame
-        from pygame import gfxdraw
 
         pygame.init()
         pygame.display.init()
@@ -375,7 +379,11 @@ if __name__ == '__main__':
     interface.show()
     interface.press_button(0)
     interface.show()
-    # interface.save('test.json')
+    interface.save('test.json')
+    buttons = load_ui('test.json')
+    interface.generata_customized_ui(buttons)
+    interface.show()
+    
     
 
 

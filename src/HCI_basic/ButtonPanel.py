@@ -34,6 +34,7 @@ class ButtonPanel(gym.Env, Interface):
         self.add = {}
         self.dt = 0.01
 
+        # For rendering
         self.window = None
         self.clock = None
         self.isopen = True
@@ -56,6 +57,9 @@ class ButtonPanel(gym.Env, Interface):
             return reward, done
 
         # We don't care about status of central button(s)
+        # if np.array_equal(self.state['current_pattern'], self.state['goal_pattern']):
+        #     reward += self.n_buttons * 2
+        #     done = True
         for idx in self.button_group['normal']:
             if self.buttons[idx].on != self.state['goal_pattern'][idx]:
                 flag = False
@@ -99,6 +103,7 @@ class ButtonPanel(gym.Env, Interface):
             else:
                 self.state['current_pattern'] = self.sample_possible_pattern()
                 self.state['goal_pattern'] = self.sample_possible_pattern()
+                self.set_button_pattern(self.state['current_pattern'])
         else:
             self.state['current_pattern'] = self.sample_possible_pattern()
             self.state['goal_pattern'] = self.sample_possible_pattern()
@@ -211,7 +216,7 @@ class ButtonPanel(gym.Env, Interface):
         # Draw the goal button pattern
         self.set_button_pattern(self.state['goal_pattern'])
         for button in self.buttons.values():
-            if button.on:
+            if button.on and button.type != 'central':
                 pygame.draw.rect(
                     canvas,
                     (255, 0, 0),
@@ -296,14 +301,14 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     env_config = {
-        'n_buttons': 7,
+        'n_buttons': 9,
         'random': False
     }
 
     if args.demo:
         env = ButtonPanel(env_config)
 
-        for _ in range(5):
+        for _ in range(10):
             env.reset(after_train=True)
             for _ in range(10):
                 env.step(env.action_space.sample(), after_train=True)
@@ -317,7 +322,7 @@ if __name__ == '__main__':
         
         ray.init(local_mode=False, num_cpus=24, num_gpus=0)
         stop = {
-            "training_iteration": 300,
+            "training_iteration": 500,
         }
         config = {
             "num_workers": 3,
@@ -358,8 +363,8 @@ if __name__ == '__main__':
         }
         config = {**DEFAULT_CONFIG, **config}
         agent = PPOTrainer(config=config)
-        agent.restore("./trained_user/PPOTrainer_2022-09-07_09-55-46/7b6bb_00000-n_buttons_7-random_False_0_2022-09-07_09-55-47/checkpoint_000300/checkpoint-300")
-        for _ in range(5):
+        agent.restore("./some-check-point")
+        for _ in range(10):
             env.reset(after_train=True)
             while not env.done:
                 action = agent.compute_single_action(env.get_obs(), unsquash_action=True)

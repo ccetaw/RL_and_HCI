@@ -7,12 +7,6 @@ from ray import tune
 import ray
 import argparse
 
-parser = argparse.ArgumentParser()
-group = parser.add_mutually_exclusive_group()
-group.add_argument("--demo", action="store_true", help="Show a window of the system")
-group.add_argument("--train", action="store_true", help="Train the agent")
-group.add_argument("--show", action="store_true", help="Show the trained agent")
-args = parser.parse_args()
 
 class WindyGrid(gym.Env):
 
@@ -38,12 +32,16 @@ class WindyGrid(gym.Env):
             "agent_location": np.random.randint(low=0, high=self.size, size=2),
             "target_location": np.random.randint(low=0, high=self.size, size=2)
         } # Will be reset
+        # Define the wind in a way that the target is always reachable
         self.wind = -np.ones(self.size, dtype=int)
         self.wind[0] = 0
-        self.wind[-1] = 0  # This is to make sure that the problem is solvable
+        self.wind[-1] = 0 
         self.wind[int(self.size/2)] = -2
+
         self.counter = 0
         self.done = False
+
+        # For rendering
         self.window = None
         self.clock = None
 
@@ -157,6 +155,13 @@ class WindyGrid(gym.Env):
 
 if __name__ == "__main__":
     
+    parser = argparse.ArgumentParser()
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--demo", action="store_true", help="Show a window of the system")
+    group.add_argument("--train", action="store_true", help="Train the agent")
+    group.add_argument("--show", action="store_true", help="Show the trained agent")
+    args = parser.parse_args()
+    
     if args.demo:
         env_config = {
             "size": 5
@@ -211,7 +216,7 @@ if __name__ == "__main__":
 
     if args.show:
         env_config = {
-            "size": 5
+            "size": 7
         }
         env = WindyGrid(config=env_config)
         config = {
